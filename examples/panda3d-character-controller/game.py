@@ -48,11 +48,18 @@ system_types = [
 ]
 
 
-
-game_map = Aspect([panda3d.Position, panda3d.Model, panda3d.Scene, Map],
+greenroad_island_map = Aspect([panda3d.Position, panda3d.Model, panda3d.Scene, Map],
                   overrides={
                       panda3d.Position: dict(value=factory(lambda:Point3(0, 0, 0))),
-                      panda3d.Model: dict(model_name='roadE.bam'),
+                      panda3d.Model: dict(model_name='greenroad_island.bam'),
+                      panda3d.Scene: dict(node=base.render),
+                  },
+)
+
+wecs_city_map = Aspect([panda3d.Position, panda3d.Model, panda3d.Scene, Map],
+                  overrides={
+                      panda3d.Position: dict(value=factory(lambda:Point3(0, 0, 0))),
+                      panda3d.Model: dict(model_name='wecs_city.bam'),
                       panda3d.Scene: dict(node=base.render),
                   },
 )
@@ -61,7 +68,8 @@ game_map = Aspect([panda3d.Position, panda3d.Model, panda3d.Scene, Map],
 # Populate the world with the map, the player character, and a few NPCs
 
 # Map
-game_map.add(base.ecs_world.create_entity())
+wecs_city_map.add(base.ecs_world.create_entity())
+greenroad_island_map.add(base.ecs_world.create_entity())
 
 # Player
 player_avatar = Aspect([aspects.player_character, mechanics.Stamina])
