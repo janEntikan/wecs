@@ -6,7 +6,7 @@ from wecs import panda3d
 from wecs import mechanics
 from wecs.aspects import Aspect
 from wecs.aspects import factory
-
+from wecs.panda3d.animation import Animation
 
 # An ontology of aspects:
 # * Controllable beings on the map
@@ -55,7 +55,24 @@ walking = Aspect([panda3d.WalkingMovement, panda3d.CrouchingMovement, panda3d.Sp
                      panda3d.FallingMovement: dict(solids=factory(rebecca_lifter)),
                  },
 )
-animated = Aspect([panda3d.Actor, panda3d.Animation])
+animated = Aspect([panda3d.Actor, panda3d.AnimationPlayer, panda3d.VelocityAnimation],
+    overrides={panda3d.VelocityAnimation: dict(
+            animation_axes=[
+                [], #x
+                [
+                    Animation("run_backward"),
+                    Animation("walk_backward"),
+                    Animation("idle"),
+                    Animation("walk_forward"),
+                    Animation("run_forward")
+                ],  #y
+                [], #z
+            ],
+            ranges=[[-20,20],[-20,20],[-20,20]]
+        ),
+    }
+)
+
 avatar = Aspect([character, walking, animated],
                 overrides={panda3d.Model: dict(model_name='rebecca.bam')})
 

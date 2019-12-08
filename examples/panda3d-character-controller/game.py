@@ -42,7 +42,7 @@ system_types = [
     panda3d.Falling,  # Fall, or stand on the ground.
     panda3d.Jumping,  # Impart upward impulse.
     panda3d.ExecuteMovement,  # Turn intention into actual movement
-    panda3d.AnimateCharacter,
+    panda3d.AnimateByVelocity,
     panda3d.Animate,
     # We're done with character movement, now adjust the cameras.
     panda3d.UpdateCameras,

@@ -1,4 +1,5 @@
 from dataclasses import field
+from math import sin
 
 from wecs.core import Component
 from wecs.core import System
@@ -12,109 +13,113 @@ from .model import Scene
 from .model import Clock
 
 
-@Component()
 class Animation:
+    def __init__(self, name="idle", blend=1, fade_in=1, fade_out=1, framerate=1):
+        self.name = name
+        self.blend = blend
+        self.current_blend = 0
+        self.fade_in_speed = fade_in
+        self.fade_out_speed = fade_out
+        self.framerate = framerate
+        self.play_once = False
+
+    def activate(self, actor):
+        if self.play_once:
+            actor.play(self.name)
+        else:
+            actor.loop(self.name)
+
+    def update(self, actor, animation_player):
+        if not self in animation_player.to_play:
+            self.die(actor, animation_player)
+        else:
+            self.fading_in()
+        actor.setControlEffect(self.name, self.current_blend)
+        actor.setPlayRate(self.framerate, self.name)
+
+    def die(self, actor, animation_player):
+        if not self.fading_out(actor):
+            actor.stop(self.name)
+            animation_player.playing.remove(self)
+
+    def fading_out(self):
+        self.blend -= self.fade_out
+        if self.blend <= 0:
+            return False
+        return True
+
+    def fading_in(self):
+        if self.current_blend < self.blend:
+            self.current_blend += self.fade_in
+        if self.current_blend >= self.blend:
+            self.current_blend = self.blend
+
+
+@Component()
+class VelocityAnimation:
+    animation_axes: list = field(default_factory=[[],[],[]]) #Three lists for: x, y, z
+    ranges: list = field(default_factory=[[],[],[]]) #Three lists for: x, y, z
+
+
+@Component()
+class AnimationPlayer:
     to_play: list = field(default_factory=list)
     playing: list = field(default_factory=list)
-    blends: list = field(default_factory=list)
-    framerate: int = 1
 
 
-class AnimateCharacter(System):
-    entity_filters = {
-        'animated_character': and_filter([
-            Animation,
-            Model,
-            CharacterController
-        ])
-    }
-
-    def update(self, entities_by_filter):
-        for entity in entities_by_filter['animated_character']:
-            controller = entity[CharacterController]
-            animation = entity[Animation]
-            actor = entity[Model].node
-
-            if FallingMovement in entity:
-                grounded = entity[FallingMovement].ground_contact
-            else:
-                grounded = False
-
-            initial = "idle"
-            if not grounded:
-                if controller.jumps:
-                    initial = "jumping"
-                elif controller.translation.z < -0.2:
-                    initial = "falling"
-            elif controller.crouches:
-                initial = "crouch"
-            animation.to_play = [initial, "walk_forward", "run_forward"]
-            #TODO: bad constant, 1.4? Should be fixed in animation
-            # when the right value is found in lab.
-            forward_speed = abs(controller.translation.y*1.4)
-            idle = max(0, (1 - forward_speed))
-            walk = 1 - abs(forward_speed - 0.5) * 2
-            run = max(0, forward_speed * 2 - 1)
-            blends = [idle, walk, run]
-            # sideways movement
-            #TODO: same here, another constant. Fix in animation after lab.
-            strafe_speed = (controller.translation.x*1.4)
-            if not strafe_speed == 0:
-                blends.append(abs(strafe_speed))
-                if strafe_speed > 0:
-                    animation.to_play.append("walk_right")
-                elif strafe_speed < 0:
-                    animation.to_play.append("walk_left")
-
-            animation.framerate = (0.5+(forward_speed + abs(strafe_speed)))
-            # If walking backwards simply play the animation in reverse
-            # TODO: Only do this when there's no animations for walking backwards.
-            if controller.translation.y < 0:
-                animation.framerate = -animation.framerate
-            if controller.translation.z < -0.2:
-                animation.framerate *= 0.2
-
-            animation.blends = blends
-
-class Animate(System):
+class AnimateByVelocity(System):
     entity_filters = {
         'animation': and_filter([
-            Animation,
+            AnimationPlayer,
+            VelocityAnimation,
+            CharacterController,
             Model,
         ])
     }
 
     def update(self, entities_by_filter):
         for entity in entities_by_filter['animation']:
-            animation = entity[Animation]
+            animation_player = entity[AnimationPlayer]
+
+            velocity_animations = entity[VelocityAnimation]
+            speed_range = velocity_animations
+            velocity = entity[CharacterController].last_translation_speed
+            for axis, animations in enumerate(velocity_animations.animation_axes):
+                for a, animation in enumerate(animations):
+                    if animation not in animation_player.to_play:
+                        animation_player.to_play.append(animation)
+                    blend = 0
+                    speed = velocity[axis]
+                    step_size = 1/len(animations)
+                    step = a*step_size
+                    if speed > step-(step_size/2) and speed < step+(step_size/2):
+                        s = sin(speed)
+                        if a%2: #invert curve if animation is odd
+                            s = -s
+                        blend = s
+                    animation.blend = animation.current_blend = blend
+
+
+class Animate(System):
+    entity_filters = {
+        'animation': and_filter([
+            AnimationPlayer,
+            Model,
+        ])
+    }
+
+    def update(self, entities_by_filter):
+        for entity in entities_by_filter['animation']:
+            animation_player = entity[AnimationPlayer]
             actor = entity[Model].node
-            if not animation.playing == animation.to_play:
-                if len(animation.to_play) > 0:
-                    actor.enableBlend()
-                else:
-                    actor.disableBlend()
-
-                # TODO: Don't stop and swap different animations instantly
-                # but ease in (and bounce?) between them.
-
-                #Stop animations not in to_play.
-                for name in animation.playing:
-                    if not name in animation.to_play:
-                        actor.stop(name)
-                        actor.setControlEffect(name, 0)
-
-                #Play newly added animations.
-                for n, name in enumerate(animation.to_play):
-                    if name not in animation.playing:
-                        actor.loop(name)
-                animation.playing = animation.to_play
-
-            # Set blends each frame
-            for b, blend in enumerate(animation.blends):
-                if b < len(animation.playing):
-                    name = animation.playing[b]
-                    actor.setControlEffect(name, blend/len(animation.playing))
-
-            # Set framerate each frame
-            for name in animation.playing:
-                actor.setPlayRate(animation.framerate, name)
+            actor.disableBlend()
+            if len(animation_player.playing) > 0:
+                actor.enableBlend()
+            #Activate any new animations.
+            for a, animation in enumerate(animation_player.to_play):
+                if animation not in animation_player.playing:
+                    animation.activate(actor)
+                    animation_player.playing.append(animation)
+            #Update currently playing animations
+            for animation in animation_player.playing:
+                animation.update(actor, animation_player)
